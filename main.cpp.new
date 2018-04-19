@@ -1,0 +1,309 @@
+#include <iostream>
+#include "types.h"
+#include <string>
+#include <stdlib.h>
+#include <sys/time.h>
+#include <errno.h>
+#include <stdio.h>
+#include <fstream>
+#include <string.h>
+
+#ifdef WINDOWS_BUILD
+	#include <SDL.h>
+	#include <SDL_image.h>
+	#include <SDL_ttf.h>
+	#include <windows.h>
+#else
+	#include <SDL2/SDL.h>
+	#include <SDL2/SDL_image.h>
+	#include <SDL2/SDL_ttf.h>
+#endif
+
+#include "game.h"
+
+/* To be done:
+	- CODE CLEANUP: OK
+	- SDL GRAPHICS: MOVE TO SDL2
+	- SCORE TABLES AND SAVING: SEMI-DONE (READING TO BE IMPLEMENTED)
+	- HARD AI */
+
+int circles[9];
+int crosses[9];
+int circles_num = 0;
+int crosses_num = 0;
+
+int windowx = 0;
+int windowy = 0;
+
+SDL_Surface *window_screen = NULL;
+SDL_Window *window = NULL;
+SDL_Texture *board = NULL;
+SDL_Texture *background = NULL;
+SDL_Renderer *renderer = NULL;
+TTF_Font *font = NULL;
+SDL_Surface *msgsurf = NULL;
+SDL_Texture *msgtex = NULL;
+
+void print_array(int *array, int size, std::string array_name)
+{
+	std::cout << array_name << ": ";
+	int i = 0;
+	while(i < size - 1)
+	{
+		std::cout << array[i] << ", ";
+		i++;
+	}
+	std::cout << array[i] << std::endl;
+}
+
+#ifdef WINDOWS_BUILD
+int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
+#else
+int main()
+#endif
+{
+	/* Get window X and Y setting */
+	std::fstream config;
+	config.open("config.txt", std::ios::in);
+	if(config.good())
+	{
+		std::string linebuf;
+		getline(config, linebuf);
+		windowx = atoi(linebuf.c_str());
+		getline(config, linebuf);
+		windowy = atoi(linebuf.c_str());
+	}
+	else
+	{
+		windowx = 600;
+		windowy = 600;
+	}
+	config.close();
+	/* Initialize SDL */
+
+	if(!graphics_init())
+	{
+		std::cout << "Initialization failed. Exiting..." << std::endl;
+		return -1;
+	}
+
+	if(!graphics_data_init())
+	{
+		std::cout << "Failed to load graphics. Exiting..." << std::endl;
+		return -1;
+	}
+
+	int playing_mode = 0; /* 1 is playing against AI, 2 is playing agains second human player, 0 is unselected */
+
+	/* Load button textures */
+	SDL_Texture *humanplaybuttontex = loadimage("data/humanplay.png", renderer);
+	if(humanplaybuttontex == NULL)
+	{
+		std::cout << "Failed to load data/humanplay.png" << std::endl;
+	}
+
+	SDL_Texture *AIplaybuttontex = loadimage("data/AIplay.png", renderer);
+	if(AIplaybuttontex == NULL)
+	{
+		std::cout << "Failed to load data/AIplay.png" << std::endl;
+	}
+
+	/* Position rectangles */
+	SDL_Rect game_mode_rects[2]; /* index 0 is for AI, 1 is for human */
+	game_mode_rects[0].w = windowx / 3;
+	game_mode_rects[0].h = windowy / 3;
+	game_mode_rects[0].x = (windowx / 2) + (0.04 * windowx);
+	game_mode_rects[0].y = (windowy / 2);
+
+	game_mode_rects[1].w = windowx / 3;
+	game_mode_rects[1].h = windowy / 3;
+	game_mode_rects[1].x = (windowx / 2) - game_mode_rects[1].w - (0.04 * windowx);
+	game_mode_rects[1].y = (windowy / 2);
+
+
+	/* Prepare text */
+//	SDL_FreeSurface(msgsurf);
+//	SDL_FreeSurface(shadowsurf);
+
+	SDL_Color text_color = { 255, 255, 255 };
+	SDL_Color shadow_color = { 0, 0, 0 };
+
+	SDL_Surface *msgsurf = NULL;
+	SDL_Surface *shadowsurf = NULL;
+	SDL_Texture *msgtex = NULL;
+	SDL_Texture *shadowtex = NULL;
+	
+	gen_text_dual_color(font, "Wybierz tryb gry: ", &msgtex, &msgsurf, &shadowtex, &shadowsurf, text_color, shadow_color, renderer);
+
+	SDL_Rect msgrect;
+	msgrect.x = (windowx / 2) - (msgsurf->w / 2);
+	msgrect.y = 0;
+	msgrect.w = msgsurf->w;
+	msgrect.h = msgsurf->h;
+
+	SDL_Rect msgshadowrect;
+	msgshadowrect.x = (windowx / 2) - (msgsurf->w / 2) + (0.002 * windowx);
+	msgshadowrect.y = 1;
+	msgshadowrect.w = msgsurf->w;
+	msgshadowrect.h = msgsurf->h;
+
+
+	/* Render it all */
+
+	SDL_RenderClear(renderer);
+	SDL_RenderCopy(renderer, background, NULL, NULL);
+	SDL_RenderCopy(renderer, shadowtex, NULL, &msgshadowrect);
+	SDL_RenderCopy(renderer, msgtex, NULL, &msgrect);
+	SDL_RenderCopy(renderer, humanplaybuttontex, NULL, &game_mode_rects[1]);
+	SDL_RenderCopy(renderer, AIplaybuttontex, NULL, &game_mode_rects[0]);
+
+	SDL_Event events;
+	bool quit = false;
+
+
+	while(playing_mode == 0 && quit == false)
+	{
+		while(SDL_PollEvent(&events))
+		{
+			SDL_RenderPresent(renderer);
+			int x = 0;
+			int y = 0;
+			if(events.type == SDL_MOUSEBUTTONDOWN)
+			{
+				SDL_GetMouseState(&x, &y);
+				/* Check which playing mode was selected if any */
+				if(x > game_mode_rects[1].x && x < (game_mode_rects[1].x + game_mode_rects[1].w) && y > game_mode_rects[1].y && y < (game_mode_rects[1].y + game_mode_rects[1].h))
+				{
+					playing_mode = 2; /* Playing with human player */
+				}
+				if(x > game_mode_rects[0].x && x < (game_mode_rects[0].x + game_mode_rects[0].w) && y > game_mode_rects[0].y && y < (game_mode_rects[0].y + game_mode_rects[1].h))
+				{
+					playing_mode = 1; /* Playing with AI */
+				}
+			}
+			if(events.type == SDL_QUIT)
+			{
+				quit = true;
+				break;
+			}
+		}
+	}
+
+	std::cout << "Playing mode: " << playing_mode << std::endl;
+	
+	SDL_DestroyTexture(msgtex);
+	SDL_DestroyTexture(shadowtex);
+	SDL_FreeSurface(shadowsurf);
+	SDL_FreeSurface(msgsurf);
+	SDL_DestroyTexture(humanplaybuttontex);
+	SDL_DestroyTexture(AIplaybuttontex);
+
+	if(quit == true)
+	{
+		SDL_DestroyTexture(background);
+		SDL_DestroyRenderer(renderer);
+		SDL_DestroyWindow(window);
+		return 0;
+	}
+	
+	/* Load textures */
+	SDL_Texture *crosstex = loadimage("data/cross.png", renderer);
+	SDL_Texture *circletex = loadimage("data/circle.png", renderer);
+	
+	SDL_Rect crossrect;
+	crossrect.w = windowx / 3; 
+	crossrect.h = windowy / 3;
+	crossrect.x = (windowx / 2) + (0.04 * windowx);
+	crossrect.y = (windowy / 2);
+
+	SDL_Rect circlerect;
+	circlerect.w = windowx / 3; 
+	circlerect.h = windowy / 3;
+	circlerect.x = (windowx / 2) - circlerect.w - (0.04 * windowx);
+	circlerect.y = (windowy / 2);
+
+
+	std::string AI_sign;
+	std::string player1_sign;
+	std::string player2_sign;
+
+	if(playing_mode == 1) /* Playing with AI */
+	{
+		player1_sign = choose_sign_menu(background, crosstex, circletex, crossrect, circlerect);
+		if(player1_sign == "X") AI_sign = "O";
+		if(player1_sign == "O") AI_sign = "X";
+	}
+	
+	std::cout << player1_sign << std::endl;
+	
+	if(playing_mode == 2) /* Two human players */
+	{
+		/* Prepare texts for name input */
+		SDL_Surface *message;
+		SDL_Surface *shadow;
+		SDL_Texture *tmessage;
+		SDL_Texture *tshadow;
+		SDL_Color shadow_color = {0 ,0 ,0};
+		SDL_Color text_color = {255, 255, 255};
+		
+		gen_text_dual_color(font, "Imię pierwszego gracza:", &tmessage, &message, &tshadow, &shadow, shadow_color, text_color, renderer);
+		
+		SDL_Rect messagerect;
+		messagerect.w = message->w;
+		messagerect.h = message->h;
+		messagerect.x = (windowx / 2) - (messagerect.w / 2);
+		messagerect.y = 0;
+
+		SDL_FreeSurface(message);
+
+		SDL_Rect shadowrect;
+		shadowrect.w = shadow->w;
+		shadowrect.h = shadow->h;
+		shadowrect.x = (windowx / 2) - (shadowrect.w / 2) + 1;
+		shadowrect.y = 1;
+		
+		SDL_FreeSurface(shadow);
+		
+//		player1_sign = choose_sign_multi_menu(/*background, crosstex, circletex, crossrect, circlerect*/);
+		
+		/* Render menu */
+		SDL_Event events;
+		while(player1_sign == "")
+		{
+			SDL_RenderCopy(renderer, background, NULL, NULL);
+			SDL_RenderCopy(renderer, tshadow, NULL, &shadowrect);
+			SDL_RenderCopy(renderer, tmessage, NULL, &messagerect);
+			SDL_RenderCopy(renderer, crosstex, NULL, &crossrect);
+			SDL_RenderCopy(renderer, circletex, NULL, &circlerect);
+			SDL_RenderPresent(renderer);
+			if(SDL_PollEvent(&events))
+			{
+				if(events.type == SDL_QUIT)
+				{
+					SDL_FreeSurface(message);
+					SDL_FreeSurface(shadow);
+					SDL_DestroyTexture(tmessage);
+					SDL_DestroyTexture(tshadow);
+					player1_sign = "QUIT";
+				}
+			}
+		}
+		if(player1_sign == "X") player2_sign = "O";
+		if(player1_sign == "O") player2_sign = "X";
+	}
+	
+
+
+	/* NULL the pointers */
+	msgtex = NULL;
+	shadowtex = NULL;
+	shadowsurf = NULL;
+	msgsurf = NULL;
+	humanplaybuttontex = NULL;
+	AIplaybuttontex = NULL;
+
+	
+
+return 0;
+}
+

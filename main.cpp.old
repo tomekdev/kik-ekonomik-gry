@@ -1,0 +1,621 @@
+#include <iostream>
+#include "types.h"
+#include <string>
+#include <stdlib.h>
+#include <sys/time.h>
+#include <errno.h>
+#include <stdio.h>
+#include <fstream>
+#include <string.h>
+
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
+
+/* To be done:
+	- CODE CLEANUP: OK
+	- SDL GRAPHICS: MOVE TO SDL2
+	- SCORE TABLES AND SAVING: SEMI-DONE (READING TO BE IMPLEMENTED)
+	- HARD AI */
+
+int circles[9];
+int crosses[9];
+int circles_num = 0;
+int crosses_num = 0;
+
+void print_array(int *array, int size, std::string array_name)
+{
+	std::cout << array_name << ": ";
+	int i = 0;
+	while(i < size - 1)
+	{
+		std::cout << array[i] << ", ";
+		i++;
+	}
+	std::cout << array[i] << std::endl;
+}
+
+coords2d fieldtocoords2d(std::string str)
+{
+	coords2d buf;
+	errno = 0; /* Clear errno we want only know the errno set by strtol() */
+	int field = strtol(str.c_str(), NULL, 10);
+	if(errno != 0)
+	{
+		buf.x = -1;
+		buf.y = -1;
+	}
+	else
+	{
+		switch(field)
+		{
+			case 1: buf.x = 0; buf.y = 2; break;
+			case 2: buf.x = 1; buf.y = 2; break;
+			case 3: buf.x = 2; buf.y = 2; break;
+			case 4: buf.x = 0; buf.y = 1; break;
+			case 5: buf.x = 1; buf.y = 1; break;
+			case 6: buf.x = 2; buf.y = 1; break;
+			case 7: buf.x = 0; buf.y = 0; break;
+			case 8: buf.x = 1; buf.y = 0; break;
+			case 9: buf.x = 2; buf.y = 0; break;
+			default: buf.x = -2; buf.y = -2; break;
+		}
+	}
+	return buf;
+}
+
+bool field_used(int field, int *fields_array, int arraysz)
+{
+	int i = 0;
+	while(i < arraysz)
+	{
+		if(fields_array[i] == field)
+		{
+			return true;
+		}
+		i++;
+	}
+	return false;
+}
+
+
+void AI_turn(int *circles, int &circles_count, int *crosses, int &crosses_count, bool hard, std::string AI_sign)
+{
+	if((crosses_count + circles_count) < 9)
+	{
+		if(!hard) /* Generate random field number */
+		{
+			bool AI_turn_done = false;
+			while(AI_turn_done == false)
+			{
+				int field = 0;
+				while(field == 0) /* Don't let the field be 0 */
+				{
+					struct timeval cur_time;
+					gettimeofday(&cur_time, NULL);
+					srand(cur_time.tv_usec);
+					field = rand() % 10;
+				}
+		
+				/* Copy field numbers into one array */
+				/* Check if field isn't already used */
+				if(!field_used(field, crosses, crosses_count) && !field_used(field, circles, circles_count))
+				{
+					if(AI_sign == "X")
+					{
+						crosses[crosses_count] = field;
+						crosses_count++;
+					}
+					if(AI_sign == "O")
+					{
+						circles[circles_count] = field;
+						circles_count++;
+					}
+					AI_turn_done = true;
+				}
+			}
+		}
+	}	
+}
+void draw_board(int *circles, int circles_count, int *crosses, int crosses_count)
+{
+	std::string board[3];
+	board[2] = " 1|2|3";
+	board[1] = " 4|5|6";
+	board[0] = " 7|8|9";
+
+	/* Draw circles */
+	int i = 0;
+	while(i < circles_count)
+	{
+		char str[2];
+		sprintf(str, "%d", circles[i]);
+		coords2d tmp = fieldtocoords2d(str);
+		board[tmp.y][(tmp.x * 2) + 1] = 'O';
+		std::cout << board[tmp.y][(tmp.x * 2) + 1] << std::endl;
+		i++;
+	}
+	i = 0;
+	/* Draw crosses */
+	while(i < crosses_count)
+	{
+		char str[2];
+		sprintf(str, "%d", crosses[i]);
+		coords2d tmp = fieldtocoords2d(str);
+		board[tmp.y][(tmp.x * 2) + 1] = 'X';
+		i++;
+	}
+
+	std::cout << board[0] << std::endl;
+	std::cout << board[1] << std::endl;
+	std::cout << board[2] << std::endl;
+}
+
+bool if_array_has_value(int *array, int size, int value)
+{
+	int i = 0;
+	while(i < size)
+	{
+		if(array[i] == value)
+		{
+			return true;
+		}
+		i++;
+	}
+	return false;
+}
+
+int who_won(int *crosses_array, int crosses_count, int *circles_array, int circles_count, std::string AI_sign) /* Returns 0 when player won, 1 when AI and -1 when no one */
+{
+	int cross_value = -1;
+	int circle_value = -1;
+
+	if(AI_sign == "X")
+	{
+		cross_value = 1;
+		circle_value = 0;
+	}
+	if(AI_sign == "O")
+	{
+		cross_value = 0;
+		circle_value = 1;
+	}
+
+	/* Check if there are three crosses across or vertically or horizontally */
+	if(if_array_has_value(crosses_array, crosses_count, 1) &&
+	   if_array_has_value(crosses_array, crosses_count, 4) &&
+	   if_array_has_value(crosses_array, crosses_count, 7) )
+	{
+		return cross_value; /* Crosses won */
+	}
+	if(if_array_has_value(crosses_array, crosses_count, 1) &&
+	   if_array_has_value(crosses_array, crosses_count, 5) &&
+	   if_array_has_value(crosses_array, crosses_count, 9) )
+	{
+		return cross_value; /* Crosses won */
+	}
+	if(if_array_has_value(crosses_array, crosses_count, 1) &&
+	   if_array_has_value(crosses_array, crosses_count, 2) &&
+	   if_array_has_value(crosses_array, crosses_count, 3) )
+	{
+		return cross_value; /* Crosses won */
+	}
+	if(if_array_has_value(crosses_array, crosses_count, 7) &&
+	   if_array_has_value(crosses_array, crosses_count, 8) &&
+	   if_array_has_value(crosses_array, crosses_count, 9) )
+	{
+		return cross_value; /* Crosses won */
+	}
+	if(if_array_has_value(crosses_array, crosses_count, 9) &&
+	   if_array_has_value(crosses_array, crosses_count, 6) &&
+	   if_array_has_value(crosses_array, crosses_count, 3) )
+	{
+		return cross_value; /* Crosses won */
+	}
+	if(if_array_has_value(crosses_array, crosses_count, 2) &&
+	   if_array_has_value(crosses_array, crosses_count, 5) &&
+	   if_array_has_value(crosses_array, crosses_count, 8) )
+	{
+		return cross_value; /* Crosses won */
+	}
+	if(if_array_has_value(crosses_array, crosses_count, 4) &&
+	   if_array_has_value(crosses_array, crosses_count, 5) &&
+	   if_array_has_value(crosses_array, crosses_count, 6) )
+	{
+		return cross_value; /* Crosses won */
+	}
+
+	/* Check if there are three circles across or vertically or horizontally */
+	if(if_array_has_value(circles_array, circles_count, 1) &&
+	   if_array_has_value(circles_array, circles_count, 4) &&
+	   if_array_has_value(circles_array, circles_count, 7) )
+	{
+		return circle_value; /* circles won */
+	}
+	if(if_array_has_value(circles_array, circles_count, 1) &&
+	   if_array_has_value(circles_array, circles_count, 5) &&
+	   if_array_has_value(circles_array, circles_count, 9) )
+	{
+		return circle_value; /* circles won */
+	}
+	if(if_array_has_value(circles_array, circles_count, 1) &&
+	   if_array_has_value(circles_array, circles_count, 2) &&
+	   if_array_has_value(circles_array, circles_count, 3) )
+	{
+		return circle_value; /* circles won */
+	}
+	if(if_array_has_value(circles_array, circles_count, 7) &&
+	   if_array_has_value(circles_array, circles_count, 8) &&
+	   if_array_has_value(circles_array, circles_count, 9) )
+	{
+		return circle_value; /* circles won */
+	}
+	if(if_array_has_value(circles_array, circles_count, 9) &&
+	   if_array_has_value(circles_array, circles_count, 6) &&
+	   if_array_has_value(circles_array, circles_count, 3) )
+	{
+		return circle_value; /* circles won */
+	}
+	if(if_array_has_value(circles_array, circles_count, 2) &&
+	   if_array_has_value(circles_array, circles_count, 5) &&
+	   if_array_has_value(circles_array, circles_count, 8) )
+	{
+		return circle_value; /* circles won */
+	}
+	if(if_array_has_value(circles_array, circles_count, 4) &&
+	   if_array_has_value(circles_array, circles_count, 5) &&
+	   if_array_has_value(circles_array, circles_count, 6) )
+	{
+		return circle_value; /* circles won */
+	}
+	return -1;
+}
+
+SDL_Texture *loadimage(const char *path, SDL_Renderer *sdl_renderer)
+{
+	SDL_Surface *non_optimized_image = NULL;
+//	SDL_Surface *optimized_image = NULL;
+
+//	non_optimized_image = IMG_Load(path);
+//	if(non_optimized_image == NULL)
+//	{
+//		std::cout << "loadBMP(): Failed to load image " << path << std::endl;
+//	}
+//	optimized_image = SDL_DisplayFormat(non_optimized_image);
+//	SDL_FreeSurface(non_optimized_image);
+//	return optimized_image;
+	non_optimized_image = IMG_Load(path);
+	if(non_optimized_image == NULL)
+	{
+		std::cout << "loadBMP(): Failed to load image " << path << ", error: " << SDL_GetError() << std::endl;
+		return NULL;
+	}
+	SDL_Texture *texture = SDL_CreateTextureFromSurface(sdl_renderer, non_optimized_image);
+	if(texture == NULL)
+	{
+		std::cout << "Failed to create texture from surface" << std::endl;
+	}
+	SDL_FreeSurface(non_optimized_image);
+	return texture;
+}
+
+void draw_element(int x, int y, SDL_Surface *source, SDL_Surface *destination)
+{
+	SDL_Rect offset;
+	offset.x = x;
+	offset.y = y;
+	SDL_BlitSurface(source, NULL, destination, &offset);
+}
+
+int main()
+{
+	/* Initialize SDL */
+	SDL_Surface *window_screen = NULL;
+	SDL_Window *window = NULL;
+	SDL_Texture *board = NULL;
+	SDL_Texture *background = NULL;
+	SDL_Renderer *renderer = NULL;
+	TTF_Font *font = NULL;
+	SDL_Surface *message = NULL;
+
+	if(SDL_Init(SDL_INIT_VIDEO) < 0)
+	{
+		std::cout << "Failed to initialize SDL" << std::endl;
+		return -1;
+	}
+
+	int flags = IMG_INIT_PNG;
+	int initialized_support = IMG_Init(flags);
+	if(initialized_support != flags)
+	{
+		std::cout << "SDL2_image initialization error" << std::endl;
+	}
+
+	if(TTF_Init() < 0)
+	{
+		std::cout << "Error initializing TTF" << std::endl;
+		return -1;
+	}
+
+	/* Create window */
+	window = SDL_CreateWindow("Kółko i krzyżyk: technik informatyk w Ekonomiku", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 500, 500, SDL_WINDOW_SHOWN);
+	if(window == NULL)
+	{
+		std::cout << "Window creation failed." << std::endl;
+		return -1;
+	}
+
+//	window_screen = SDL_GetWindowSurface(window);
+	/* Create renderer */
+	renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+	if(renderer == NULL)
+	{
+		std::cout << "Failed to initialize renderer!!!" << std::endl;
+		return -1;
+	}
+
+	background = loadimage("data/background.png", renderer);
+	if(background == NULL)
+	{
+		std::cout << "Failed to load image data/background.bmp" << std::endl;
+	}
+
+	board = loadimage("data/board.png", renderer);
+	if(board == NULL)
+	{
+		std::cout << "Failed to load image data/board.png" << std::endl;
+	}
+
+	font = TTF_OpenFont("data/font.ttf", 8);
+	if(font == NULL)
+	{
+		std::cout << "Failed to load font: " << TTF_GetError() << std::endl;
+	}
+
+	SDL_Color text_color = { 255, 100, 255 };
+
+	message = TTF_RenderText_Solid(font, "Moj pierwszy tekst nowa czcionka", text_color);
+
+	SDL_Texture *msgtext = SDL_CreateTextureFromSurface(renderer, message);
+
+	/* Clear screen */
+	SDL_RenderClear(renderer);
+
+	/* Render textures */
+	SDL_SetTextureBlendMode(board, SDL_BLENDMODE_BLEND);
+	SDL_SetTextureAlphaMod(board, 100);
+	SDL_Rect board_rect;
+	board_rect.x = 0;
+	board_rect.y = 0;
+	board_rect.w = 100;
+	board_rect.h = 120;
+
+	SDL_Rect msgrect;
+	msgrect.x = 0;
+	msgrect.y = 0;
+	msgrect.w = 500;
+	msgrect.h = 30;
+
+	SDL_RenderCopy(renderer, background, NULL, NULL);
+	SDL_RenderCopy(renderer, board, NULL, &board_rect);
+	SDL_RenderCopy(renderer, msgtext, NULL, &msgrect);
+	/* Show it all */
+	SDL_RenderPresent(renderer);
+/*
+	SDL_Surface *scaled_surface = NULL;
+	scaled_surface = loadimage("data/board.png", window_screen);
+	if(scaled_surface == NULL)
+	{
+		std::cout << "Failed to load image data/board.bmp" << std::endl;
+	}
+
+	SDL_Rect small_image;
+	small_image.x = 0;
+	small_image.y = 0;
+	small_image.w = 10;
+	small_image.h = 10;
+
+	SDL_SetAlpha();
+
+
+	SDL_BlitSurface(background, NULL, window_screen, NULL);
+	SDL_BlitScaled(scaled_surface, NULL, window_screen, &small_image);
+
+
+	SDL_UpdateWindowSurface(window);
+
+	SDL_Delay(1000);
+
+	SDL_FreeSurface(window_screen);
+*/
+
+	SDL_Delay(1000);
+	SDL_DestroyTexture(background);
+	SDL_DestroyTexture(board);
+	SDL_DestroyRenderer(renderer);
+
+	SDL_DestroyWindow(window);
+	SDL_Quit;
+
+#if 0
+	/* Apply background to screen */
+	SDL_BlitSurface(background, NULL, screen, NULL);
+
+	board = loadimage("data/board.png");
+
+	SDL_SetAlpha(board, SDL_RLEACCEL | SDL_SRCALPHA, 100);
+
+	/* Show board */
+	draw_element(200, 100, board, screen);
+
+	/* Initialize TTF module */
+	if(TTF_Init() < 0)
+	{
+		std::cout << "Error initializing TTF" << std::endl;
+		return -1;
+	}
+
+	font = TTF_OpenFont("data/font.ttf", 20);
+	if(font == NULL)
+	{
+		std::cout << "Failed to load font" << std::endl;
+	}
+
+	SDL_Color text_color = { 255, 100, 255 };
+
+	message = TTF_RenderText_Solid(font, "Moj pierwszy tekst nowa czcionka", text_color);
+
+	draw_element(0, 100, message, screen);
+
+	/* Show it all */
+	SDL_Flip(screen);
+
+	/* Animation test */
+	Uint8 alpha = 255;
+	while(alpha > 0)
+	{
+		SDL_SetAlpha(board, SDL_RLEACCEL | SDL_SRCALPHA, alpha);
+		draw_element(0, 0, background, screen);
+		draw_element(0, 200, board, screen);
+		SDL_Flip(screen);
+
+		alpha--;
+	}
+
+	SDL_Delay(1000);
+	SDL_FreeSurface(background);
+	SDL_FreeSurface(board);
+	SDL_FreeSurface(message);
+	TTF_CloseFont(font);
+	TTF_Quit();
+	SDL_FreeSurface(screen);
+	SDL_Quit();
+#endif
+	std::string circle_or_cross;
+	std::string AI_sign;
+	std::cout << "Who would you like to be ? (O or X) ";
+	std::cin >> circle_or_cross;
+	if(circle_or_cross == "X")
+	{
+		AI_sign = "O";
+	} else if(circle_or_cross == "O") {
+		AI_sign = "X";
+	} else {
+		std::cout << "Bad answer" << std::endl;
+		return -1;
+	}
+	std::cout << "AI_sign: " << AI_sign << std::endl;
+	std::cout << "Your sign: " << circle_or_cross << std::endl;
+	draw_board(NULL, 0, NULL, 0);
+	bool finish = false;
+	double player_time_secs = 0;
+	int num_player_turns = 0; /* Number of player turns */
+	int who = 0; /* Who won the game */
+	while(finish == false && (circles_num + crosses_num) < 9)
+	{
+		struct timeval player_turn_start;
+		gettimeofday(&player_turn_start, NULL);
+		struct timeval player_turn_end;
+		bool player_turn_done = false;
+		while(player_turn_done == false)
+		{
+			std::string str;
+			std::cout << "Where do you want to put your sign ? (1-9) ";
+			std::cin >> str;
+			coords2d coords = fieldtocoords2d(str);
+			if(coords.x < 0)
+			{
+				if(coords.x == -1)
+				{
+					std::cout << "Error: Not a number: " << strerror(errno) << std::endl;
+				} else if(coords.x == -2) {
+					std::cout << "Error: value out of range " << str << std::endl;
+				}
+			}
+			else
+			{
+				int field_number = strtol(str.c_str(), NULL, 10);
+				if(!field_used(field_number, crosses, crosses_num) && !field_used(field_number, circles, circles_num))
+				{
+					if(circle_or_cross == "X")
+					{
+						crosses[crosses_num] = field_number;
+						crosses_num++;
+					}
+					if(circle_or_cross == "O")
+					{
+						circles[circles_num] = field_number;
+						circles_num++;
+					}
+					player_turn_done = true;
+					num_player_turns++;
+					draw_board(circles, circles_num, crosses, crosses_num);
+				}
+				else
+				{
+					std::cout << "This field is already used" << std::endl;
+				}
+			}
+		}
+		gettimeofday(&player_turn_end, NULL);
+		player_time_secs = player_time_secs + (player_turn_end.tv_sec - player_turn_start.tv_sec) + ((player_turn_end.tv_usec - player_turn_start.tv_usec)/1000000.0);
+		who = who_won(crosses, crosses_num, circles, circles_num, AI_sign);
+		if(who == -1)
+		{
+			AI_turn(circles, circles_num, crosses, crosses_num, false, AI_sign);
+			who = who_won(crosses, crosses_num, circles, circles_num, AI_sign);
+		}
+		draw_board(circles, circles_num, crosses, crosses_num);
+		if(who == 0)
+		{
+			std::cout << "CONGRATULATIONS!!! PLAYER WON!!!" << std::endl;
+			finish = true;
+		}
+		if(who == 1)
+		{
+			std::cout << "YOU LOST!!!! YOU LOOSER!!!" << std::endl;
+			finish = true;
+		}
+	}
+	std::cout << "Player total time: " << player_time_secs << " (secs)" << std::endl;
+	if(who == 0)
+	{
+		std::string outstr;
+		std::string player_name;
+		std::cout << "Your name: ";
+		std::cin >> player_name;
+		outstr = player_name + " #";
+		char player_time_secs_str[2048];
+		sprintf(player_time_secs_str, "%'.3f", player_time_secs);
+		outstr = outstr + player_time_secs_str;
+		outstr = outstr + " #";
+		char num_player_turns_str[10];
+		sprintf(num_player_turns_str, "%d", num_player_turns);
+		outstr = outstr + num_player_turns_str;
+		std::fstream file;
+		file.open("score.txt", std::ios::in | std::ios::out);
+		if(!file.good()) /* Maybe file does not exist ? */
+		{
+			file.open("score.txt", std::ios::out);
+			if(!file.good())
+			{
+				std::cout << "Could not write score.txt: " << strerror(errno) << std::endl;
+			}
+		}
+		std::string linebuf; /* Append to file */
+		std::string filebuf;
+		/* Get file size */
+		file.seekg(0, std::ios::end);
+		ssize_t filesz = file.tellg();
+		while(file.tellg() != filesz)
+		{
+			getline(file, linebuf);
+			filebuf = filebuf + linebuf;
+		}
+		filebuf = filebuf + outstr;
+		file << filebuf << std::endl;
+		file.close();
+	}
+return 0;
+}
+
