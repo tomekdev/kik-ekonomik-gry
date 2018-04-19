@@ -1,0 +1,53 @@
+###################################################################
+2018 Kółko i krzyżyk na Dni Otwarte w Ekonomiku w Białej Podlaskiej
+###################################################################
+
+1. Compilation
+1.1. Compilation for Linux
+1.1.1. Installing libraries
+1.1.2. Compiling
+1.2. Compilation for Windows using Mingw-w64
+2. Launching
+3. Configuring
+
+1. Compilation
+This game requires following libraries to run and compile successfully:
+- SDL2
+- SDL2 image
+- SDL2 ttf
+
+1.1. Compilation for Linux
+
+1.1.1. Installing libraries
+
+To install required libraries on Debian-based distros run:
+# apt install libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
+
+1.1.2. Compiling
+
+To compile run make
+
+This will produce "kik" binary in main tree.
+
+1.2. Compilation for Windows using Mingw-w64
+
+There's no need to download any libraries, they are inscluded within this repository. To compile game for Windows using Mingw-w64 run:
+!!!WARNING!!! I didn't try to compile game under Windows using MSVC++ or something similar. If you want to do this all libraries and headers are in winsdl directory !!!WARNING!!!
+
+$ ./build-windows.sh
+
+This will produce ready to play game in winbuild directory
+
+2. Launching
+
+On Windows and Linux simply double click. From commandline run ./kik or .\kik.exe (Windows)
+
+3. Configuring
+
+Currently only resolution changing is supported. To do this create file config.txt in the same directory where is game binary and write following lines:
+X_RESOLUTION
+Y_RESOLUTION
+
+where X_RESOLUTION is x resolution and Y_RESOLUTION is y resolution. They both should be equal.
+
+If no config.txt is present game defaults to 600x600 resolution.
